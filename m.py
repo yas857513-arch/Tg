@@ -7,7 +7,7 @@ from flask import Flask
 from threading import Thread
 
 # --- CONFIGURATION ---
-TOKEN = '8435736634:AAEdqCGHCNK7g2asBZSlgJzermb5Q0voZRk'
+TOKEN = '8435736634:AAEjqwKep8bh9dZmVyOhiI4CX4IE666_GIw'
 bot = telebot.TeleBot(TOKEN)
 
 # --- DUMMY SERVER FOR RENDER HEALTH CHECK ---
