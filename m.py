@@ -9,7 +9,7 @@ import ipaddress
 from flask import Flask
 
 # ===== CONFIG =====
-TOKEN = "8435736634:AAHht4_qXrW16W9pDLNv3Feb8F3nvrK4G5g"   # ⚠️ replace
+TOKEN = "8435736634:AAE1VbGHmhhAh_X20LBw4iTv7QgHZDOrFeQ"   # ⚠️ replace
 bot = telebot.TeleBot(TOKEN)
 
 # ===== FLASK (RENDER PORT BIND FIX) =====
